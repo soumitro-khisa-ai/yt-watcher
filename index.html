@@ -217,20 +217,13 @@
         videoId,
         playerVars: { rel: 0, autoplay: 1 },
         events: {
+          onReady: (e) => {
+            e.target.unMute();
+          },
           onStateChange: (e) => {
             if (e.data === YT.PlayerState.ENDED) {
-              const idx = players.indexOf(player);
-              if (idx !== -1) players.splice(idx, 1);
-              player.destroy();
-              const el = document.getElementById(containerId);
-              if (el && el.parentNode) {
-                const newId = 'p-' + Date.now() + '-' + (++playerCounter);
-                const newEl = document.createElement('div');
-                newEl.className = 'player-item';
-                newEl.id = newId;
-                el.parentNode.replaceChild(newEl, el);
-                players.push(createPlayer(newId, videoId));
-              }
+              e.target.seekTo(0);
+              e.target.playVideo();
             }
           }
         }
