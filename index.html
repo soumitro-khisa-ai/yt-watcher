@@ -168,7 +168,7 @@
 
     <div class="input-group">
       <input type="text" id="urlInput" value="https://youtu.be/eFm2AWodLDU?si=PFv3Mpi_5KOQEjIy" autofocus>
-      <input type="number" id="timesInput" class="input-number" value="40" min="1" max="50">
+      <input type="number" id="timesInput" class="input-number" value="200" min="1" max="200">
     </div>
 
     <div class="btn-group">
@@ -187,6 +187,9 @@
   <script>
     let currentVideoId = null;
     let players = [];
+    let loadingIndex = 0;
+    let totalToLoad = 0;
+    let isLoading = false;
 
     function getVideoId(url) {
       const patterns = [
@@ -206,42 +209,115 @@
     }
 
     function destroyPlayers() {
-      players.forEach(p => p.destroy());
+      players.forEach(p => {
+        try { p.destroy(); } catch (e) {}
+      });
       players = [];
+      loadingIndex = 0;
+      totalToLoad = 0;
+      isLoading = false;
     }
 
-    let playerCounter = 0;
-
-    function createPlayer(containerId, videoId) {
+    function createPlayer(containerId, videoId, onReady) {
       const player = new YT.Player(containerId, {
         videoId,
-        playerVars: { rel: 0, autoplay: 1 },
+        playerVars: { rel: 0, autoplay: 1, mute: 1 },
         events: {
           onReady: (e) => {
             e.target.unMute();
+            e.target.setPlaybackQuality('hd720');
+            if (onReady) onReady();
           },
           onStateChange: (e) => {
             if (e.data === YT.PlayerState.ENDED) {
-              e.target.seekTo(0);
-              e.target.playVideo();
+              handleVideoEnded(e.target, containerId, videoId);
             }
+          },
+          onError: (e) => {
+            console.error('Player error:', e.data);
+            if (onReady) onReady();
           }
         }
       });
       return player;
     }
 
+    function handleVideoEnded(player, containerId, videoId) {
+      const index = players.indexOf(player);
+      if (index === -1) return;
+
+      try {
+        player.destroy();
+      } catch (e) {}
+
+      players.splice(index, 1);
+
+      const container = document.getElementById('playerContainer');
+      const oldDiv = document.getElementById(containerId);
+      if (oldDiv) oldDiv.remove();
+
+      const newDiv = document.createElement('div');
+      newDiv.className = 'player-item';
+      newDiv.id = 'player-' + Date.now() + '-' + (totalToLoad + players.length);
+      newDiv.style.height = '100%';
+      container.appendChild(newDiv);
+
+      const newPlayer = createPlayer(newDiv.id, videoId);
+      players.push(newPlayer);
+    }
+
+    function createPlaceholder(index) {
+      const div = document.createElement('div');
+      div.className = 'player-item';
+      div.id = 'player-placeholder-' + index;
+      div.innerHTML = `
+        <div class="placeholder" style="height: 100%;">
+          <div class="placeholder-icon">⏳</div>
+          <span>Waiting ${index + 1}/${totalToLoad}...</span>
+        </div>
+      `;
+      return div;
+    }
+
+    function loadNextPlayer(videoId, count) {
+      if (loadingIndex >= count || isLoading) return;
+      isLoading = true;
+
+      const container = document.getElementById('playerContainer');
+      const placeholder = document.getElementById('player-placeholder-' + loadingIndex);
+      const playerDiv = document.createElement('div');
+      playerDiv.className = 'player-item';
+      playerDiv.id = 'player-' + Date.now() + '-' + loadingIndex;
+      playerDiv.style.height = '100%';
+
+      if (placeholder) {
+        container.replaceChild(playerDiv, placeholder);
+      } else {
+        container.appendChild(playerDiv);
+      }
+
+      const player = createPlayer(playerDiv.id, videoId, () => {
+        players.push(player);
+        loadingIndex++;
+        isLoading = false;
+        loadNextPlayer(videoId, count);
+      });
+    }
+
     function renderPlayers(id, count) {
       destroyPlayers();
+      totalToLoad = Math.min(count, 200);
+      loadingIndex = 0;
+      isLoading = false;
+
       const container = document.getElementById('playerContainer');
       container.innerHTML = '';
-      for (let i = 0; i < count; i++) {
-        const div = document.createElement('div');
-        div.className = 'player-item';
-        div.id = 'player-' + Date.now() + '-' + i;
-        container.appendChild(div);
-        players.push(createPlayer(div.id, id));
+
+      for (let i = 0; i < totalToLoad; i++) {
+        container.appendChild(createPlaceholder(i));
       }
+
+      loadNextPlayer(id, totalToLoad);
     }
 
     function loadVideo() {
